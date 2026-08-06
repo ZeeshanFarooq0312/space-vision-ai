@@ -1,0 +1,86 @@
+"""Runnable Phase 1-2 demo:
+
+    python -m visionstack.pipeline.run_pipeline --source samples/sample.mp4 --camera-id entry-cam-1
+"""
+from __future__ import annotations
+
+import logging
+
+import cv2
+import typer
+
+from visionstack.common.types import Detection
+from visionstack.detection.person_detector import PersonDetector
+from visionstack.ingestion.video_source import video_source_from_config
+from visionstack.pipeline.orchestrator import FrameResult, Pipeline
+
+app = typer.Typer(add_completion=False)
+
+
+def _draw_detections(image, detections: list[Detection]):
+    for d in detections:
+        p1 = (int(d.bbox.x1), int(d.bbox.y1))
+        p2 = (int(d.bbox.x2), int(d.bbox.y2))
+        cv2.rectangle(image, p1, p2, (0, 200, 0), 2)
+        cv2.putText(
+            image,
+            f"person {d.confidence:.2f}",
+            (p1[0], max(0, p1[1] - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 200, 0),
+            1,
+            cv2.LINE_AA,
+        )
+    return image
+
+
+@app.command()
+def main(
+    source: str = typer.Option(..., help="Video file path or RTSP URL"),
+    camera_id: str = typer.Option("camera-1", help="Camera identifier to tag frames/detections with"),
+    source_type: str = typer.Option("file", help="'file' or 'rtsp'"),
+    sample_fps: float = typer.Option(5.0, help="Target frames-per-second to process"),
+    weights: str = typer.Option("models/yolov8n.pt", help="YOLOv8 weights path"),
+    device: str = typer.Option("auto", help="'auto', 'cpu', or 'cuda'"),
+    conf_threshold: float = typer.Option(0.5),
+    iou_threshold: float = typer.Option(0.45),
+    show: bool = typer.Option(False, help="Write an annotated output video (out.mp4) for visual sanity-checking"),
+) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+
+    video_source = video_source_from_config(camera_id=camera_id, source_type=source_type, uri=source)
+    detector = PersonDetector(
+        weights_path=weights, device=device, conf_threshold=conf_threshold, iou_threshold=iou_threshold
+    )
+    pipeline = Pipeline(video_source=video_source, detector=detector, sample_fps=sample_fps)
+
+    writer: cv2.VideoWriter | None = None
+    frame_count = 0
+    detection_count = 0
+
+    result: FrameResult
+    for result in pipeline.run():
+        frame_count += 1
+        detection_count += len(result.detections)
+        for d in result.detections:
+            typer.echo(
+                f"  frame={d.frame_id} bbox=({d.bbox.x1:.0f},{d.bbox.y1:.0f},{d.bbox.x2:.0f},{d.bbox.y2:.0f}) conf={d.confidence:.2f}"
+            )
+
+        if show:
+            annotated = _draw_detections(result.frame.image.copy(), result.detections)
+            if writer is None:
+                h, w = annotated.shape[:2]
+                writer = cv2.VideoWriter("out.mp4", cv2.VideoWriter_fourcc(*"mp4v"), sample_fps, (w, h))
+            writer.write(annotated)
+
+    if writer is not None:
+        writer.release()
+        typer.echo("Wrote annotated output to out.mp4")
+
+    typer.echo(f"Processed {frame_count} frames, {detection_count} total detections.")
+
+
+if __name__ == "__main__":
+    app()

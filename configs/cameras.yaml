@@ -1,0 +1,26 @@
+cameras:
+  - camera_id: entry-cam-1
+    role: entry
+    source:
+      type: rtsp
+      uri: rtsp://user:pass@192.168.1.10:554/stream1
+    sample_fps: 5
+    resolution: [1920, 1080]
+    enabled: true
+
+  - camera_id: exit-cam-1
+    role: exit
+    source:
+      type: rtsp
+      uri: rtsp://user:pass@192.168.1.11:554/stream1
+    sample_fps: 5
+    resolution: [1920, 1080]
+    enabled: true
+
+  - camera_id: zone-cam-lobby
+    role: zone
+    source:
+      type: file
+      uri: samples/sample.mp4
+    sample_fps: 5
+    enabled: true

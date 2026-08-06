@@ -1,0 +1,13 @@
+detection:
+  weights: models/yolov8n.pt
+  device: auto
+  conf_threshold: 0.5
+  iou_threshold: 0.45
+
+identity:
+  face_match_threshold: 0.55
+  body_match_threshold: 0.45
+
+attendance:
+  presence_confirmation_seconds: 8
+  end_of_day_auto_logout_time: "23:59"

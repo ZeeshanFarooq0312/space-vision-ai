@@ -1,0 +1,14 @@
+zones:
+  - zone_id: server-room
+    camera_id: zone-cam-lobby
+    name: "Server Room"
+    zone_type: restricted
+    polygon: [[120, 300], [640, 300], [640, 720], [120, 720]]
+    allowed_roles: ["it_admin", "facilities"]
+
+  - zone_id: main-lobby
+    camera_id: zone-cam-lobby
+    name: "Main Lobby"
+    zone_type: allowed
+    polygon: [[0, 0], [1920, 0], [1920, 300], [0, 300]]
+    allowed_roles: []
