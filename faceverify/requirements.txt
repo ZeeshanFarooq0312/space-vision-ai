@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+deepface
+qdrant-client
+opencv-python-headless
+numpy
+tf-keras
+tensorflow==2.16.1
+python-multipart

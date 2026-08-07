@@ -86,6 +86,18 @@ export function Live() {
         )}
       </div>
 
+      {running && (
+        <p className="mb-4 text-sm">
+          {status.data?.recognized_names.length ? (
+            <span className="font-medium text-green-700">
+              Recognized: {status.data.recognized_names.join(", ")}
+            </span>
+          ) : (
+            <span className="text-gray-400">No enrolled employee recognized</span>
+          )}
+        </p>
+      )}
+
       {status.data?.error && (
         <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{status.data.error}</p>
       )}

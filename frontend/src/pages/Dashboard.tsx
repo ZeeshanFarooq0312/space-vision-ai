@@ -10,7 +10,9 @@ export function Dashboard() {
   return (
     <div className="p-6">
       <div className="mb-4 grid grid-cols-3 gap-4">
-        <StatCard label="Employees" value={employees.data?.length} loading={employees.isLoading} />
+        <Link to="/employees">
+          <StatCard label="Employees" value={employees.data?.length} loading={employees.isLoading} />
+        </Link>
         <StatCard label="Cameras" value={cameras.data?.length} loading={cameras.isLoading} />
         <StatCard label="Open Alerts" value={alerts.data?.length} loading={alerts.isLoading} />
       </div>

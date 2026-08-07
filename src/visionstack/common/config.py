@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://visionstack:visionstack@localhost:5432/visionstack"
     log_level: str = "INFO"
+    # External face-embedding service (onboard/verify/compare/embeddings) — see
+    # visionstack.identity.face_api_client. No local RetinaFace/ArcFace model yet (see README).
+    face_api_base_url: str = "http://182.180.87.19:3009"
 
 
 class VideoSourceConfig(BaseModel):

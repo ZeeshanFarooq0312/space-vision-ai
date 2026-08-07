@@ -31,6 +31,14 @@ data/processed_videos/
 # Employee onboarding enrollment photos (biometric-adjacent, not committed)
 data/employee_photos/
 
+# Local faceverify service (faceverify/) writes real enrollment photos into its mounted
+# src/ dir at runtime -- same biometric-data reasoning as data/employee_photos/ above.
+faceverify/src/*
+!faceverify/src/.gitkeep
+
+# Raw uploaded videos, deleted after processing but ignored as a safety net
+data/video_uploads/
+
 # OS / editor
 .DS_Store
 Thumbs.db

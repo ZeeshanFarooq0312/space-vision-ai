@@ -66,6 +66,18 @@ class AlertRead(BaseModel):
     created_at: datetime
 
 
+class FaceEnrollmentResult(BaseModel):
+    employee_id: uuid.UUID
+    face_id: str
+    embedding_dim: int
+
+
+class FaceEnrollmentStatus(BaseModel):
+    enrolled: bool
+    face_id: str | None
+    enrolled_at: datetime | None
+
+
 class WebcamDevice(BaseModel):
     device_index: int
     label: str
@@ -82,6 +94,7 @@ class LiveSessionStatus(BaseModel):
     frame_count: int
     detection_count: int
     error: str | None = None
+    recognized_names: list[str] = []
 
 
 class ProcessedVideo(BaseModel):
@@ -95,3 +108,17 @@ class ProcessedVideo(BaseModel):
     max_people_in_frame: int
     filename: str
     browser_playable: bool
+    recognized_names: list[str] = []
+
+
+class VideoUploadResponse(BaseModel):
+    video_id: str
+    status: str
+
+
+class UploadJobStatus(BaseModel):
+    video_id: str
+    status: str
+    frame_count: int
+    detection_count: int
+    error: str | None = None

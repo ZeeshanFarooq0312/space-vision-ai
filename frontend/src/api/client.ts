@@ -5,9 +5,12 @@ import type {
   Camera,
   Employee,
   EmployeeCreate,
-  EnrollmentPose,
+  FaceEnrollmentResult,
+  FaceEnrollmentStatus,
   LiveSessionStatus,
   ProcessedVideo,
+  UploadJobStatus,
+  VideoUploadResponse,
   WebcamDevice,
   Zone,
 } from "../types";
@@ -19,11 +22,20 @@ export const api = {
   listEmployees: () => client.get<Employee[]>("/employees").then((r) => r.data),
   createEmployee: (payload: EmployeeCreate) =>
     client.post<Employee>("/employees", payload).then((r) => r.data),
-  uploadEnrollmentPhoto: (employeeId: string, pose: EnrollmentPose, blob: Blob) => {
+  enrollFace: (employeeId: string, photos: { front: Blob; left: Blob; right: Blob }) => {
     const form = new FormData();
-    form.append("file", blob, `${pose}.jpg`);
-    return client.put(`/employees/${employeeId}/photos/${pose}`, form).then(() => undefined);
+    form.append("front", photos.front, "front.jpg");
+    form.append("left", photos.left, "left.jpg");
+    form.append("right", photos.right, "right.jpg");
+    return client
+      .post<FaceEnrollmentResult>(`/employees/${employeeId}/enroll-face`, form)
+      .then((r) => r.data);
   },
+  deleteEmployee: (employeeId: string) => client.delete(`/employees/${employeeId}`).then(() => undefined),
+  getFaceEnrollment: (employeeId: string) =>
+    client.get<FaceEnrollmentStatus>(`/employees/${employeeId}/face-enrollment`).then((r) => r.data),
+  enrollmentPhotoUrl: (employeeId: string, pose: "front" | "left" | "right") =>
+    `/api/employees/${employeeId}/photos/${pose}`,
   listCameras: () => client.get<Camera[]>("/cameras").then((r) => r.data),
   listZones: () => client.get<Zone[]>("/zones").then((r) => r.data),
   listAttendanceEvents: () =>
@@ -47,6 +59,16 @@ export const api = {
   liveStreamUrl: (cameraId: string) => `/api/live/${cameraId}/stream`,
   listProcessedVideos: () => client.get<ProcessedVideo[]>("/videos").then((r) => r.data),
   processedVideoUrl: (videoId: string) => `/api/videos/${videoId}/file`,
+  uploadVideo: (file: File, sampleFps = 4.0) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("sample_fps", String(sampleFps));
+    return client
+      .post<VideoUploadResponse>("/videos/upload", form)
+      .then((r) => r.data);
+  },
+  getUploadStatus: (videoId: string) =>
+    client.get<UploadJobStatus>(`/videos/upload/${videoId}/status`).then((r) => r.data),
 };
 
 export default client;

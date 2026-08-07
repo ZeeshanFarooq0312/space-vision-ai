@@ -8,3 +8,7 @@ class ConfigError(VisionStackError):
 
 class VideoSourceError(VisionStackError):
     """Raised when a video/RTSP source cannot be opened or read."""
+
+
+class FaceApiError(VisionStackError):
+    """Raised when the external face-embedding API rejects a request or returns an unexpected shape."""

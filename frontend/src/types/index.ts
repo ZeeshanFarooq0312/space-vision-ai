@@ -16,6 +16,18 @@ export interface EmployeeCreate {
 
 export type EnrollmentPose = "straight" | "left" | "right";
 
+export interface FaceEnrollmentResult {
+  employee_id: string;
+  face_id: string;
+  embedding_dim: number;
+}
+
+export interface FaceEnrollmentStatus {
+  enrolled: boolean;
+  face_id: string | null;
+  enrolled_at: string | null;
+}
+
 export interface Camera {
   camera_id: string;
   name: string;
@@ -61,6 +73,7 @@ export interface LiveSessionStatus {
   frame_count: number;
   detection_count: number;
   error: string | null;
+  recognized_names: string[];
 }
 
 export interface ProcessedVideo {
@@ -74,4 +87,18 @@ export interface ProcessedVideo {
   max_people_in_frame: number;
   filename: string;
   browser_playable: boolean;
+  recognized_names: string[];
+}
+
+export interface VideoUploadResponse {
+  video_id: string;
+  status: string;
+}
+
+export interface UploadJobStatus {
+  video_id: string;
+  status: "processing" | "done" | "error";
+  frame_count: number;
+  detection_count: number;
+  error: string | null;
 }

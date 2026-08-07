@@ -23,6 +23,14 @@ class VideoSource(ABC):
     def open(self) -> None:
         self._cap = self._open_capture()
         if not self._cap.isOpened():
+            # Release before raising: if open() is called via `with source:` (the normal path,
+            # see Pipeline.run()), raising here happens inside __enter__, and Python's context
+            # manager protocol never calls __exit__/close() when __enter__ itself raises. Left
+            # unreleased, a single failed open leaks the OS-level device claim -- observed in
+            # practice as a real webcam permanently EBUSY for every later attempt until the
+            # process holding the stale handle was restarted.
+            self._cap.release()
+            self._cap = None
             raise VideoSourceError(f"Failed to open video source for camera '{self.camera_id}'")
 
     def close(self) -> None:
@@ -79,14 +87,27 @@ class RTSPVideoSource(VideoSource):
 
 
 class WebcamVideoSource(VideoSource):
-    """Local webcam via OpenCV device index (e.g. 0 for the default camera)."""
+    """Local webcam via OpenCV device index (e.g. 0 for the default camera).
 
-    def __init__(self, device_index: int, camera_id: str) -> None:
+    Requests 1920x1080 by default rather than whatever the driver's own default is (measured at
+    640x480 on this hardware) -- the external face-verify API quality-gates on how much of the
+    frame the face fills ("Move closer."), and at 480p a person standing at a normal camera
+    distance is nowhere near large/sharp enough to pass; 1080p was the minimum tested that
+    reliably cleared it (720p still failed). cv2 falls back to the nearest supported mode if a
+    device can't do the requested resolution, so this degrades gracefully on lower-end cameras.
+    """
+
+    def __init__(self, device_index: int, camera_id: str, width: int = 1920, height: int = 1080) -> None:
         super().__init__(camera_id)
         self._device_index = device_index
+        self._width = width
+        self._height = height
 
     def _open_capture(self) -> cv2.VideoCapture:
-        return cv2.VideoCapture(self._device_index)
+        cap = cv2.VideoCapture(self._device_index)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+        return cap
 
     @property
     def fps(self) -> float:

@@ -22,18 +22,76 @@ services:
       dockerfile: docker/api.Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://visionstack:visionstack@postgres:5432/visionstack
+      # Points at the local faceverify service (below) instead of the external
+      # 182.180.87.19:3009 server, so onboarding/verify calls stay on the docker
+      # network and are easy to inspect/debug (logs, breakpoints, Qdrant browser).
+      FACE_API_BASE_URL: http://faceverify:8024
     ports:
       - "8000:8000"
     volumes:
       - ./models:/app/models
+      # Recordings (live_stream.py) and employee enrollment photos (routers/employees.py) --
+      # without this, they live only in the container's writable layer and are silently lost on
+      # every rebuild/recreate. (Embeddings themselves are safe regardless -- those are in
+      # Postgres, which has its own `pgdata` volume above.)
+      - ./data:/app/data
     # Live-preview (Phase 1-2 webcam capture) needs the host webcam device inside the
     # container. Adjust/add entries here to match whatever /dev/video* exists on the host.
     devices:
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     depends_on:
       postgres:
         condition: service_healthy
+      faceverify:
+        condition: service_started
+
+  # ── Local FaceVerify service (copied from the external 182.180.87.19:3009 deployment,
+  # faceverify/main.py) -- runs here so onboarding/verify can be debugged directly: real
+  # logs, breakpoints, etc. instead of a black-box remote call.
+  #
+  # Points at the host's existing standalone `qdrant` container (already running on this
+  # machine, port 6333/6334, with the real faceverify_* collections already populated) rather
+  # than a fresh empty one -- that way verifying against already-enrolled employees behaves
+  # exactly like the real remote server. `host.docker.internal` needs the extra_hosts entry
+  # below on Linux (it's automatic on Docker Desktop, not on a plain Linux docker engine).
+  faceverify:
+    build:
+      context: ./faceverify
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      QDRANT_HOST: host.docker.internal
+      QDRANT_PORT: "6333"
+      QDRANT_GRPC: "6334"
+      QDRANT_PREFER_GRPC: "true"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      TF_GPU_ALLOCATOR: cuda_malloc_async
+    # Published on the host too (same port the original deployment's reverse proxy exposed
+    # this service under) so it can be curled directly while debugging, independent of the
+    # main api container.
+    ports:
+      - "3009:8024"
+    volumes:
+      - ./faceverify/src:/app/src
+      # DeepFace downloads ArcFace/Facenet512/GhostFaceNet/RetinaFace weights (~500MB) on
+      # first use -- persist them so a container rebuild doesn't re-download every time.
+      - deepface_weights:/root/.deepface/weights
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   frontend:
     build:
@@ -67,3 +125,4 @@ services:
 
 volumes:
   pgdata:
+  deepface_weights:

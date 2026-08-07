@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,8 +28,13 @@ from pathlib import Path
 import cv2
 
 from visionstack.common.config import REPO_ROOT
-from visionstack.common.types import Detection
+from visionstack.common.errors import FaceApiError
+from visionstack.common.types import BBox, Detection
+from visionstack.db.models import Employee, EmployeeFaceEmbedding
+from visionstack.db.session import SessionLocal
 from visionstack.detection.person_detector import PersonDetector
+from visionstack.identity import face_api_client
+from visionstack.identity.face_detector import HaarFaceDetector
 from visionstack.ingestion.video_source import video_source_from_config
 from visionstack.pipeline.orchestrator import Pipeline
 
@@ -37,6 +43,16 @@ logger = logging.getLogger("visionstack.api.live_stream")
 JPEG_QUALITY = 80
 MAX_PROBE_DEVICES = 5
 PROCESSED_VIDEOS_DIR = REPO_ROOT / "data" / "processed_videos"
+# How often (seconds) to refresh the whole frame's recognition labels. There's no persistent
+# per-person tracking yet (tracking/local_tracker.py's PassthroughLocalTracker hands out a brand
+# new track_id every frame -- Phase 6/ByteTrack is still a TODO), so instead of per-person caching
+# this just re-verifies everyone currently visible as one batch, every N seconds, regardless of
+# how many people that is -- and the resulting labels are shown until the next refresh.
+VERIFY_INTERVAL_SECONDS = 2.0
+FACE_CROP_MARGIN_RATIO = 0.3
+# Cap concurrent /verify calls within one refresh batch -- each takes ~2s server-side; firing an
+# unbounded number at once (e.g. 10 people in frame) would hammer the external service.
+MAX_CONCURRENT_VERIFIES = 4
 
 
 def list_webcam_devices() -> list[dict]:
@@ -52,14 +68,32 @@ def list_webcam_devices() -> list[dict]:
     return devices
 
 
-def _draw_detections(image, detections: list[Detection]):
+def _order_left_to_right(detections: list[Detection]) -> list[Detection]:
+    """The correspondence used both when a recognition batch is captured and when its labels are
+    later matched back onto a (possibly different) frame's boxes. Not real identity tracking --
+    just a cheap, stable-enough-for-a-mostly-static-camera heuristic so "regenerate labels every
+    N seconds" doesn't need a per-person tracker to know which label goes on which box.
+    """
+    return sorted(detections, key=lambda d: d.bbox.x1)
+
+
+def _draw_detections(image, detections: list[Detection], recognized_labels: list[str | None] | None = None):
+    ordered = _order_left_to_right(detections)
+    labels_by_id = {}
+    if recognized_labels:
+        for d, name in zip(ordered, recognized_labels):
+            if name:
+                labels_by_id[id(d)] = name
+
     for d in detections:
         p1 = (int(d.bbox.x1), int(d.bbox.y1))
         p2 = (int(d.bbox.x2), int(d.bbox.y2))
+        name = labels_by_id.get(id(d))
+        label = f"{name} {d.confidence:.2f}" if name else f"person {d.confidence:.2f}"
         cv2.rectangle(image, p1, p2, (0, 200, 0), 2)
         cv2.putText(
             image,
-            f"person {d.confidence:.2f}",
+            label,
             (p1[0], max(0, p1[1] - 6)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -68,6 +102,100 @@ def _draw_detections(image, detections: list[Detection]):
             cv2.LINE_AA,
         )
     return image
+
+
+def _crop_with_margin(image, bbox: BBox, margin_ratio: float):
+    h, w = image.shape[:2]
+    mx, my = bbox.width * margin_ratio, bbox.height * margin_ratio
+    x1 = max(0, int(bbox.x1 - mx))
+    y1 = max(0, int(bbox.y1 - my))
+    x2 = min(w, int(bbox.x2 + mx))
+    y2 = min(h, int(bbox.y2 + my))
+    return image[y1:y2, x1:x2]
+
+
+def _ensure_min_size(image, min_dim: int = 320):
+    """Upscales small crops before sending to /verify. Confirmed against the real API on a still
+    image with a known-good face: the exact same image at 245px on its short side got "Move
+    closer.", and at 246px -- one pixel more, via plain cv2.INTER_CUBIC upscaling with no new
+    real detail -- it passed and returned a genuine match. So this isn't compensating for actual
+    image quality, it's clearing a literal minimum-dimension check; interpolated pixels count the
+    same as real ones to it. 320 leaves headroom above the measured ~246px cutoff. A distant CCTV
+    person's crop is exactly the case this helps: too small to pass on its own, and upscaling it
+    doesn't need better camera hardware to do so.
+    """
+    h, w = image.shape[:2]
+    if min(h, w) >= min_dim or min(h, w) == 0:
+        return image
+    scale = min_dim / min(h, w)
+    return cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+
+
+def build_face_crops(detections: list[Detection], frame_image, face_detector: HaarFaceDetector) -> list[bytes | None]:
+    """Shared by the live pipeline and uploaded-video processing (video_upload.py): for every
+    detection (already left-to-right ordered via _order_left_to_right), produce the JPEG bytes to
+    send to /verify -- Haar's crop when it finds a face, the whole person crop otherwise, always
+    topped up to a safe minimum size. See _maybe_refresh_labels below for why each of these
+    choices was made; extracted here purely to avoid re-deriving the same logic per caller.
+    """
+    ordered = _order_left_to_right(detections)
+    face_crops: list[bytes | None] = []
+    for d in ordered:
+        person_crop = _crop_with_margin(frame_image, d.bbox, margin_ratio=0.0)
+        faces = face_detector.detect(person_crop)
+        if faces:
+            face = max(faces, key=lambda f: f.bbox.width * f.bbox.height)
+            crop_for_verify = _crop_with_margin(person_crop, face.bbox, FACE_CROP_MARGIN_RATIO)
+        else:
+            crop_for_verify = person_crop
+        crop_for_verify = _ensure_min_size(crop_for_verify)
+        ok, buf = cv2.imencode(".jpg", crop_for_verify, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        face_crops.append(buf.tobytes() if ok else None)
+    return face_crops
+
+
+def verify_crops_batch(face_crops: list[bytes | None], context: str) -> list[str | None]:
+    """Runs /verify for every non-None crop with bounded concurrency and resolves each face_id
+    to an employee name. `context` is just a label for logging (camera_id for live, the uploaded
+    filename for video_upload.py) -- this has no other awareness of the caller.
+    """
+    labels: list[str | None] = [None] * len(face_crops)
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_VERIFIES) as pool:
+        futures = {
+            pool.submit(face_api_client.verify_face, crop): i
+            for i, crop in enumerate(face_crops)
+            if crop is not None
+        }
+        for future in as_completed(futures):
+            i = futures[future]
+            try:
+                face_id = future.result()
+            except FaceApiError:
+                logger.exception("verify_face failed for '%s' (person %d)", context, i)
+                continue
+            if face_id is None:
+                logger.info("verify_face: no enrolled match for '%s' (person %d)", context, i)
+                continue
+            name = _lookup_employee_name(face_id)
+            logger.info(
+                "verify_face: '%s' person %d -> face_id=%s -> %s",
+                context, i, face_id, name or "(face_id not found in our DB)",
+            )
+            labels[i] = name
+    return labels
+
+
+def _lookup_employee_name(face_id: str) -> str | None:
+    with SessionLocal() as db:
+        record = (
+            db.query(EmployeeFaceEmbedding)
+            .filter(EmployeeFaceEmbedding.source_ref == face_id, EmployeeFaceEmbedding.is_active)
+            .first()
+        )
+        if record is None:
+            return None
+        employee = db.get(Employee, record.employee_id)
+        return employee.full_name if employee else None
 
 
 def _transcode_to_h264(raw_path: Path, final_path: Path) -> bool:
@@ -110,6 +238,10 @@ class _Session:
     max_people_in_frame: int = 0
     writer: cv2.VideoWriter | None = None
     error: str | None = None
+    recognized_labels: list[str | None] = field(default_factory=list)  # see _order_left_to_right
+    all_recognized_names: set[str] = field(default_factory=set)  # accumulated for the recording's metadata
+    last_verify_at: float = 0.0
+    verify_in_flight: bool = False
 
 
 class LiveStreamManager:
@@ -154,13 +286,21 @@ class LiveStreamManager:
     def status(self, camera_id: str) -> dict:
         session = self._sessions.get(camera_id)
         if session is None:
-            return {"camera_id": camera_id, "running": False, "frame_count": 0, "detection_count": 0, "error": None}
+            return {
+                "camera_id": camera_id,
+                "running": False,
+                "frame_count": 0,
+                "detection_count": 0,
+                "error": None,
+                "recognized_names": [],
+            }
         return {
             "camera_id": camera_id,
             "running": session.thread is not None and session.thread.is_alive(),
             "frame_count": session.frame_count,
             "detection_count": session.detection_count,
             "error": session.error,
+            "recognized_names": sorted({n for n in session.recognized_labels if n}),
         }
 
     def latest_frame(self, camera_id: str) -> bytes | None:
@@ -176,6 +316,7 @@ class LiveStreamManager:
                 camera_id=session.camera_id, source_type="webcam", uri=str(session.device_index)
             )
             detector = PersonDetector(device="auto")
+            face_detector = HaarFaceDetector()
             pipeline = Pipeline(video_source=video_source, detector=detector, sample_fps=sample_fps)
 
             gen = pipeline.run()
@@ -183,7 +324,11 @@ class LiveStreamManager:
                 for result in gen:
                     if session.stop_event.is_set():
                         break
-                    annotated = _draw_detections(result.frame.image.copy(), result.detections)
+
+                    self._maybe_refresh_labels(session, face_detector, result.frame.image, result.detections)
+                    annotated = _draw_detections(
+                        result.frame.image.copy(), result.detections, session.recognized_labels
+                    )
 
                     ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
                     if ok:
@@ -207,6 +352,66 @@ class LiveStreamManager:
             session.error = str(e)
         finally:
             self._finalize_recording(session)
+
+    def _maybe_refresh_labels(
+        self, session: _Session, face_detector: HaarFaceDetector, frame_image, detections: list[Detection]
+    ) -> None:
+        """Phase 3, wired into the live pipeline: person detection (already done by the caller)
+        -> local face-crop extraction for every visible person -> external /verify per person
+        (bounded concurrency) -> DB lookup by face_id.
+
+        Refreshes the whole frame's labels as one batch every VERIFY_INTERVAL_SECONDS, regardless
+        of how many people are visible, rather than tracking individuals -- there's no persistent
+        per-person tracking yet (see the module docstring), so per-person caching isn't cheap to
+        do correctly. The external call measured ~2s round trip; running these in a background
+        thread (not inline) keeps the capture loop from stalling on it -- that stall is what
+        "tracking is slow" actually was, independent of person-detection speed/GPU.
+
+        Haar is used to tighten the crop when it succeeds, but measured against this camera's
+        actual framing it found a face in 0/127 person-crops (too far/angled for a cascade
+        classifier) -- treating a Haar miss as "no face, don't bother verifying" was silently
+        preventing verification from ever running at all. So a Haar miss now falls back to
+        sending the *whole* person crop instead of skipping that person: the external service
+        does its own (materially better) detection and quality gating already -- that's exactly
+        what rejected under-filled onboarding photos with "Move closer." earlier -- so it's the
+        right place for that decision, not a local heuristic that's empirically ~0% effective here.
+
+        A/B tested two narrower fallback crops against the real API on the same live frame before
+        settling here: a head-centered crop (regressed a real match to "not verified" by cutting
+        pixel area ~4x) and an upper-half-of-body crop (same-or-worse than sending the whole
+        person crop in every case tested, e.g. one person went from a "Move closer." quality
+        rejection with upper-half to actually clearing the gate with the full crop). So this sends
+        the largest crop available rather than sub-cropping further, then _ensure_min_size tops
+        it up to a safe minimum: pinned the exact "Move closer." cutoff to a pixel dimension (245
+        fails, 246 passes on an otherwise-identical image), confirmed plain interpolation clears
+        it -- no new real detail needed -- so a small crop is upscaled before sending rather than
+        left to fail on a distant person the local camera simply can't resolve any larger.
+        """
+        if not detections:
+            session.recognized_labels = []
+            return
+
+        now = time.monotonic()
+        if now - session.last_verify_at < VERIFY_INTERVAL_SECONDS or session.verify_in_flight:
+            return
+
+        face_crops = build_face_crops(detections, frame_image, face_detector)
+
+        session.last_verify_at = now
+        session.verify_in_flight = True
+        threading.Thread(
+            target=self._run_batch_verify, args=(session, face_crops), daemon=True,
+            name=f"verify-batch-{session.camera_id}",
+        ).start()
+
+    def _run_batch_verify(self, session: _Session, face_crops: list[bytes | None]) -> None:
+        labels = [None] * len(face_crops)
+        try:
+            labels = verify_crops_batch(face_crops, context=session.camera_id)
+        finally:
+            session.recognized_labels = labels
+            session.all_recognized_names.update(n for n in labels if n)
+            session.verify_in_flight = False
 
     def _finalize_recording(self, session: _Session) -> None:
         if session.writer is not None:
@@ -232,6 +437,7 @@ class LiveStreamManager:
             "max_people_in_frame": session.max_people_in_frame,
             "filename": session.final_path.name,
             "browser_playable": playable,
+            "recognized_names": sorted(session.all_recognized_names),
         }
         session.final_path.with_suffix(".json").write_text(json.dumps(metadata, indent=2))
 

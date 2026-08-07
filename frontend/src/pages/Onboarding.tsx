@@ -1,7 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { ImageCropper } from "../components/ImageCropper";
 import type { EnrollmentPose } from "../types";
+
+/** FastAPI error responses carry the real message in `detail`; axios's own `.message` is just
+ * "Request failed with status code 422" unless we pull it out ourselves. */
+function errorMessage(e: unknown): string {
+  if (isAxiosError(e)) {
+    const detail = e.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+  }
+  return e instanceof Error ? e.message : "Something went wrong";
+}
 
 const POSES: { pose: EnrollmentPose; instruction: string }[] = [
   { pose: "straight", instruction: "Look straight at the camera" },
@@ -27,26 +39,45 @@ export function Onboarding() {
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Partial<Record<EnrollmentPose, { blob: Blob; url: string }>>>({});
+  // A raw (uncropped) snapshot awaiting the crop step -- captureFrame() fills this in, and it's
+  // cleared once the admin confirms or cancels the crop. The face API rejects wide-angle webcam
+  // shots as "too far" (see _check_quality upstream), so cropping in tight on the face before
+  // upload is mandatory, not optional polish.
+  const [cropping, setCropping] = useState<{ pose: EnrollmentPose; url: string } | null>(null);
   const [employeeCode, setEmployeeCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("");
   const [department, setDepartment] = useState("");
   const [done, setDone] = useState(false);
 
-  // Revoke every captured photo's object URL on unmount. Retakes revoke their own previous
-  // URL inline in capture() below — this effect only needs to run once, for final cleanup.
+  // Revoke every captured/in-progress-crop object URL on unmount. Retakes and crop
+  // confirm/cancel revoke their own previous URL inline — this effect only needs to run once.
   const photosRef = useRef(photos);
   photosRef.current = photos;
+  const croppingRef = useRef(cropping);
+  croppingRef.current = cropping;
   useEffect(() => {
-    return () => Object.values(photosRef.current).forEach((p) => p && URL.revokeObjectURL(p.url));
+    return () => {
+      Object.values(photosRef.current).forEach((p) => p && URL.revokeObjectURL(p.url));
+      if (croppingRef.current) URL.revokeObjectURL(croppingRef.current.url);
+    };
   }, []);
 
   async function startCamera() {
     setCameraError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("This browser doesn't support camera access (getUserMedia unavailable).");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      // videoRef.current is guaranteed non-null here -- the <video> element is always
+      // rendered (see JSX below), it's just visually covered by the "Start camera" button
+      // until cameraOn flips. Setting srcObject conditionally on a ref that only exists
+      // *after* this same state flip was the original bug: the element wasn't mounted yet.
+      videoRef.current!.srcObject = stream;
+      await videoRef.current!.play();
       setCameraOn(true);
     } catch (e) {
       setCameraError(e instanceof Error ? e.message : "Could not access camera");
@@ -56,12 +87,26 @@ export function Onboarding() {
   async function capture(pose: EnrollmentPose) {
     if (!videoRef.current) return;
     const blob = await captureFrame(videoRef.current);
+    setCropping({ pose, url: URL.createObjectURL(blob) });
+  }
+
+  function confirmCrop(blob: Blob) {
+    if (!cropping) return;
+    const { pose, url: rawUrl } = cropping;
+    URL.revokeObjectURL(rawUrl);
     const url = URL.createObjectURL(blob);
     setPhotos((prev) => {
       const previous = prev[pose];
       if (previous) URL.revokeObjectURL(previous.url);
       return { ...prev, [pose]: { blob, url } };
     });
+    setCropping(null);
+  }
+
+  function cancelCrop() {
+    if (!cropping) return;
+    URL.revokeObjectURL(cropping.url);
+    setCropping(null);
   }
 
   const allPhotosCaptured = POSES.every(({ pose }) => photos[pose] != null);
@@ -75,10 +120,12 @@ export function Onboarding() {
         role: role.trim(),
         department: department.trim() || undefined,
       });
-      for (const { pose } of POSES) {
-        await api.uploadEnrollmentPhoto(employee.id, pose, photos[pose]!.blob);
-      }
-      return employee;
+      // Our "straight" pose maps to the face API's "front" pose; it's otherwise a 1:1 match.
+      return api.enrollFace(employee.id, {
+        front: photos.straight!.blob,
+        left: photos.left!.blob,
+        right: photos.right!.blob,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -92,8 +139,8 @@ export function Onboarding() {
     return (
       <div className="p-6">
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-800">
-          {fullName} onboarded successfully. Enrollment photos are stored and ready for the face/body
-          embedding pipeline once that phase is built.
+          {fullName} onboarded successfully. Face embedding stored
+          {submit.data ? ` (face_id: ${submit.data.face_id})` : ""}.
         </div>
         <button
           className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
@@ -148,7 +195,7 @@ export function Onboarding() {
 
         {submit.isError && (
           <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-            {(submit.error as Error).message}
+            {errorMessage(submit.error)}
           </p>
         )}
 
@@ -162,12 +209,11 @@ export function Onboarding() {
       </div>
 
       <div>
-        <div className="flex aspect-video items-center justify-center rounded-lg border border-gray-200 bg-black">
-          {cameraOn ? (
-            <video ref={videoRef} autoPlay playsInline muted className="max-h-full max-w-full" />
-          ) : (
+        <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-black">
+          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-contain" />
+          {!cameraOn && (
             <button
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+              className="absolute rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
               onClick={startCamera}
             >
               Start camera
@@ -181,6 +227,8 @@ export function Onboarding() {
           </p>
         )}
       </div>
+
+      {cropping && <ImageCropper src={cropping.url} onConfirm={confirmCrop} onCancel={cancelCrop} />}
     </div>
   );
 }
