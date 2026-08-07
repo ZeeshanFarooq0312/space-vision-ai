@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 
 export function Dashboard() {
@@ -7,10 +8,19 @@ export function Dashboard() {
   const alerts = useQuery({ queryKey: ["alerts", "open"], queryFn: () => api.listAlerts("open") });
 
   return (
-    <div className="grid grid-cols-3 gap-4 p-6">
-      <StatCard label="Employees" value={employees.data?.length} loading={employees.isLoading} />
-      <StatCard label="Cameras" value={cameras.data?.length} loading={cameras.isLoading} />
-      <StatCard label="Open Alerts" value={alerts.data?.length} loading={alerts.isLoading} />
+    <div className="p-6">
+      <div className="mb-4 grid grid-cols-3 gap-4">
+        <StatCard label="Employees" value={employees.data?.length} loading={employees.isLoading} />
+        <StatCard label="Cameras" value={cameras.data?.length} loading={cameras.isLoading} />
+        <StatCard label="Open Alerts" value={alerts.data?.length} loading={alerts.isLoading} />
+      </div>
+
+      <Link
+        to="/onboarding"
+        className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+      >
+        Onboard Employee
+      </Link>
     </div>
   );
 }

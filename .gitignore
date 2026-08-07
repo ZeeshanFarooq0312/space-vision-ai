@@ -28,6 +28,9 @@ frontend/dist/
 # Processed video recordings (live-capture output, not committed)
 data/processed_videos/
 
+# Employee onboarding enrollment photos (biometric-adjacent, not committed)
+data/employee_photos/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -4,6 +4,7 @@ import { Alerts } from "./pages/Alerts";
 import { Attendance } from "./pages/Attendance";
 import { Dashboard } from "./pages/Dashboard";
 import { Live } from "./pages/Live";
+import { Onboarding } from "./pages/Onboarding";
 import { Recordings } from "./pages/Recordings";
 import { Zones } from "./pages/Zones";
 
@@ -15,6 +16,7 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/live" element={<Live />} />
         <Route path="/recordings" element={<Recordings />} />
+        <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/zones" element={<Zones />} />

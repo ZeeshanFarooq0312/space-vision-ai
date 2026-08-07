@@ -7,6 +7,15 @@ export interface Employee {
   active: boolean;
 }
 
+export interface EmployeeCreate {
+  employee_code: string;
+  full_name: string;
+  role: string;
+  department?: string;
+}
+
+export type EnrollmentPose = "straight" | "left" | "right";
+
 export interface Camera {
   camera_id: string;
   name: string;

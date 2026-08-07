@@ -4,6 +4,8 @@ import type {
   AttendanceEvent,
   Camera,
   Employee,
+  EmployeeCreate,
+  EnrollmentPose,
   LiveSessionStatus,
   ProcessedVideo,
   WebcamDevice,
@@ -15,6 +17,13 @@ const client = axios.create({ baseURL: "/api" });
 export const api = {
   health: () => client.get<{ status: string }>("/health").then((r) => r.data),
   listEmployees: () => client.get<Employee[]>("/employees").then((r) => r.data),
+  createEmployee: (payload: EmployeeCreate) =>
+    client.post<Employee>("/employees", payload).then((r) => r.data),
+  uploadEnrollmentPhoto: (employeeId: string, pose: EnrollmentPose, blob: Blob) => {
+    const form = new FormData();
+    form.append("file", blob, `${pose}.jpg`);
+    return client.put(`/employees/${employeeId}/photos/${pose}`, form).then(() => undefined);
+  },
   listCameras: () => client.get<Camera[]>("/cameras").then((r) => r.data),
   listZones: () => client.get<Zone[]>("/zones").then((r) => r.data),
   listAttendanceEvents: () =>

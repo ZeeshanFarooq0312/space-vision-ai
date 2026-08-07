@@ -12,3 +12,4 @@ numpy==1.26.4
 shapely==2.0.6
 PyYAML==6.0.2
 typer==0.15.1
+python-multipart==0.0.20
