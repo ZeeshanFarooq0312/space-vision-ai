@@ -40,3 +40,29 @@ export interface Alert {
   status: "open" | "acknowledged" | "resolved";
   created_at: string;
 }
+
+export interface WebcamDevice {
+  device_index: number;
+  label: string;
+}
+
+export interface LiveSessionStatus {
+  camera_id: string;
+  running: boolean;
+  frame_count: number;
+  detection_count: number;
+  error: string | null;
+}
+
+export interface ProcessedVideo {
+  video_id: string;
+  camera_id: string;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  frame_count: number;
+  detection_count: number;
+  max_people_in_frame: number;
+  filename: string;
+  browser_playable: boolean;
+}

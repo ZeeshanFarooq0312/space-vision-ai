@@ -25,6 +25,9 @@ frontend/dist/
 # DB
 *.sqlite3
 
+# Processed video recordings (live-capture output, not committed)
+data/processed_videos/
+
 # OS / editor
 .DS_Store
 Thumbs.db

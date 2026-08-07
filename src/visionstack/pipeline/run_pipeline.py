@@ -37,15 +37,18 @@ def _draw_detections(image, detections: list[Detection]):
 
 @app.command()
 def main(
-    source: str = typer.Option(..., help="Video file path or RTSP URL"),
+    source: str = typer.Option(..., help="Video file path, RTSP URL, or webcam device index (e.g. '0')"),
     camera_id: str = typer.Option("camera-1", help="Camera identifier to tag frames/detections with"),
-    source_type: str = typer.Option("file", help="'file' or 'rtsp'"),
+    source_type: str = typer.Option("file", help="'file', 'rtsp', or 'webcam'"),
     sample_fps: float = typer.Option(5.0, help="Target frames-per-second to process"),
     weights: str = typer.Option("models/yolov8n.pt", help="YOLOv8 weights path"),
     device: str = typer.Option("auto", help="'auto', 'cpu', or 'cuda'"),
     conf_threshold: float = typer.Option(0.5),
     iou_threshold: float = typer.Option(0.45),
     show: bool = typer.Option(False, help="Write an annotated output video (out.mp4) for visual sanity-checking"),
+    display: bool = typer.Option(
+        False, help="Show a live annotated preview window while processing (press 'q' to stop)"
+    ),
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -58,26 +61,40 @@ def main(
     writer: cv2.VideoWriter | None = None
     frame_count = 0
     detection_count = 0
+    window_name = f"visionstack — {camera_id}"
 
-    result: FrameResult
-    for result in pipeline.run():
-        frame_count += 1
-        detection_count += len(result.detections)
-        for d in result.detections:
-            typer.echo(
-                f"  frame={d.frame_id} bbox=({d.bbox.x1:.0f},{d.bbox.y1:.0f},{d.bbox.x2:.0f},{d.bbox.y2:.0f}) conf={d.confidence:.2f}"
-            )
+    try:
+        result: FrameResult
+        for result in pipeline.run():
+            frame_count += 1
+            detection_count += len(result.detections)
+            for d in result.detections:
+                typer.echo(
+                    f"  frame={d.frame_id} bbox=({d.bbox.x1:.0f},{d.bbox.y1:.0f},{d.bbox.x2:.0f},{d.bbox.y2:.0f}) conf={d.confidence:.2f}"
+                )
 
-        if show:
-            annotated = _draw_detections(result.frame.image.copy(), result.detections)
-            if writer is None:
-                h, w = annotated.shape[:2]
-                writer = cv2.VideoWriter("out.mp4", cv2.VideoWriter_fourcc(*"mp4v"), sample_fps, (w, h))
-            writer.write(annotated)
+            if show or display:
+                annotated = _draw_detections(result.frame.image.copy(), result.detections)
 
-    if writer is not None:
-        writer.release()
-        typer.echo("Wrote annotated output to out.mp4")
+                if show:
+                    if writer is None:
+                        h, w = annotated.shape[:2]
+                        writer = cv2.VideoWriter(
+                            "out.mp4", cv2.VideoWriter_fourcc(*"mp4v"), sample_fps, (w, h)
+                        )
+                    writer.write(annotated)
+
+                if display:
+                    cv2.imshow(window_name, annotated)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        typer.echo("Stopped by user ('q' pressed).")
+                        break
+    finally:
+        if writer is not None:
+            writer.release()
+            typer.echo("Wrote annotated output to out.mp4")
+        if display:
+            cv2.destroyAllWindows()
 
     typer.echo(f"Processed {frame_count} frames, {detection_count} total detections.")
 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from visionstack.api.routers import alerts, attendance, cameras, employees, health, zones
+from visionstack.api.routers import alerts, attendance, cameras, employees, health, live, videos, zones
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,8 @@ def create_app() -> FastAPI:
     app.include_router(zones.router)
     app.include_router(attendance.router)
     app.include_router(alerts.router)
+    app.include_router(live.router)
+    app.include_router(videos.router)
 
     return app
 

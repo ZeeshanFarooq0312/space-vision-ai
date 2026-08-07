@@ -1,5 +1,14 @@
 import axios from "axios";
-import type { Alert, AttendanceEvent, Camera, Employee, Zone } from "../types";
+import type {
+  Alert,
+  AttendanceEvent,
+  Camera,
+  Employee,
+  LiveSessionStatus,
+  ProcessedVideo,
+  WebcamDevice,
+  Zone,
+} from "../types";
 
 const client = axios.create({ baseURL: "/api" });
 
@@ -14,6 +23,21 @@ export const api = {
     client
       .get<Alert[]>("/alerts", { params: status ? { status } : undefined })
       .then((r) => r.data),
+  listWebcamDevices: () => client.get<WebcamDevice[]>("/live/devices").then((r) => r.data),
+  getLiveStatus: (cameraId: string) =>
+    client.get<LiveSessionStatus>(`/live/${cameraId}/status`).then((r) => r.data),
+  startLive: (cameraId: string, deviceIndex: number, sampleFps = 8.0) =>
+    client
+      .post<LiveSessionStatus>(`/live/${cameraId}/start`, {
+        device_index: deviceIndex,
+        sample_fps: sampleFps,
+      })
+      .then((r) => r.data),
+  stopLive: (cameraId: string) =>
+    client.post<LiveSessionStatus>(`/live/${cameraId}/stop`).then((r) => r.data),
+  liveStreamUrl: (cameraId: string) => `/api/live/${cameraId}/stream`,
+  listProcessedVideos: () => client.get<ProcessedVideo[]>("/videos").then((r) => r.data),
+  processedVideoUrl: (videoId: string) => `/api/videos/${videoId}/file`,
 };
 
 export default client;

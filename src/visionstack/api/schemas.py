@@ -64,3 +64,34 @@ class AlertRead(BaseModel):
     message: str
     status: str
     created_at: datetime
+
+
+class WebcamDevice(BaseModel):
+    device_index: int
+    label: str
+
+
+class LiveSessionStart(BaseModel):
+    device_index: int
+    sample_fps: float = 8.0
+
+
+class LiveSessionStatus(BaseModel):
+    camera_id: str
+    running: bool
+    frame_count: int
+    detection_count: int
+    error: str | None = None
+
+
+class ProcessedVideo(BaseModel):
+    video_id: str
+    camera_id: str
+    started_at: datetime
+    ended_at: datetime
+    duration_seconds: float
+    frame_count: int
+    detection_count: int
+    max_people_in_frame: int
+    filename: str
+    browser_playable: bool

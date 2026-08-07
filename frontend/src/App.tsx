@@ -3,6 +3,8 @@ import { NavBar } from "./components/NavBar";
 import { Alerts } from "./pages/Alerts";
 import { Attendance } from "./pages/Attendance";
 import { Dashboard } from "./pages/Dashboard";
+import { Live } from "./pages/Live";
+import { Recordings } from "./pages/Recordings";
 import { Zones } from "./pages/Zones";
 
 export function App() {
@@ -11,6 +13,8 @@ export function App() {
       <NavBar />
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/live" element={<Live />} />
+        <Route path="/recordings" element={<Recordings />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/zones" element={<Zones />} />

@@ -6,7 +6,11 @@ import pytest
 
 from visionstack.common.errors import VideoSourceError
 from visionstack.ingestion.frame_sampler import FrameSampler
-from visionstack.ingestion.video_source import FileVideoSource, video_source_from_config
+from visionstack.ingestion.video_source import (
+    FileVideoSource,
+    WebcamVideoSource,
+    video_source_from_config,
+)
 
 
 def _write_synthetic_video(path: Path, num_frames: int, fps: int) -> None:
@@ -51,3 +55,14 @@ def test_frame_sampler_downsamples_to_target_fps(synthetic_video: Path):
 def test_video_source_from_config_selects_file_backend(synthetic_video: Path):
     source = video_source_from_config("cam", "file", str(synthetic_video))
     assert isinstance(source, FileVideoSource)
+
+
+def test_video_source_from_config_selects_webcam_backend():
+    source = video_source_from_config("cam", "webcam", "0")
+    assert isinstance(source, WebcamVideoSource)
+    assert source._device_index == 0
+
+
+def test_video_source_from_config_rejects_non_integer_webcam_index():
+    with pytest.raises(VideoSourceError):
+        video_source_from_config("cam", "webcam", "not-a-number")

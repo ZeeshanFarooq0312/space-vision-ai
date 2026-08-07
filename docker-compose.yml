@@ -24,6 +24,13 @@ services:
       DATABASE_URL: postgresql+psycopg://visionstack:visionstack@postgres:5432/visionstack
     ports:
       - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    # Live-preview (Phase 1-2 webcam capture) needs the host webcam device inside the
+    # container. Adjust/add entries here to match whatever /dev/video* exists on the host.
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
     ports:
       - "5173:5173"
     depends_on:
