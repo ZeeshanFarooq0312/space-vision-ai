@@ -42,6 +42,15 @@ export interface Zone {
   name: string;
   zone_type: "allowed" | "restricted" | "exit";
   polygon: [number, number][];
+  triggers_login: boolean;
+}
+
+export interface ZoneCreate {
+  camera_id: string;
+  name: string;
+  zone_type: "allowed" | "restricted" | "exit";
+  polygon: [number, number][];
+  triggers_login: boolean;
 }
 
 export interface AttendanceEvent {
@@ -74,6 +83,23 @@ export interface LiveSessionStatus {
   detection_count: number;
   error: string | null;
   recognized_names: string[];
+  frame_width: number | null;
+  frame_height: number | null;
+}
+
+export interface ZoneVisitRecord {
+  track_id: string;
+  employee_id: string | null;
+  employee_name: string | null;
+  occurred_at: string;
+  crop_url: string | null;
+}
+
+export interface ZoneVisitSummary {
+  zone_id: string;
+  zone_name: string;
+  person_count: number;
+  visits: ZoneVisitRecord[];
 }
 
 export interface ProcessedVideo {
@@ -88,6 +114,7 @@ export interface ProcessedVideo {
   filename: string;
   browser_playable: boolean;
   recognized_names: string[];
+  zone_results: ZoneVisitSummary[];
 }
 
 export interface VideoUploadResponse {
@@ -101,4 +128,6 @@ export interface UploadJobStatus {
   frame_count: number;
   detection_count: number;
   error: string | null;
+  frame_width: number | null;
+  frame_height: number | null;
 }

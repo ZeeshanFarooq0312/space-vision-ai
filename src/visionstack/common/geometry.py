@@ -28,6 +28,21 @@ def point_in_polygon(point: Point, polygon: list[Point]) -> bool:
     return ShapelyPolygon(polygon).contains(ShapelyPoint(point))
 
 
+def bbox_polygon_overlap_area(bbox: BBox, polygon: list[Point]) -> float:
+    """Area of intersection between `bbox` and `polygon`. Used to decide which zone a detection
+    belongs to when its box spans more than one zone (adjacent or overlapping) -- see
+    zones/monitor.DbZoneMonitor.check(), which assigns the detection to whichever zone captures
+    the most of its box rather than using a single point. Returns 0 if the polygon is degenerate
+    or there's no overlap."""
+    if len(polygon) < 3:
+        return 0.0
+    box_poly = ShapelyPolygon([(bbox.x1, bbox.y1), (bbox.x2, bbox.y1), (bbox.x2, bbox.y2), (bbox.x1, bbox.y2)])
+    zone_poly = ShapelyPolygon(polygon)
+    if not box_poly.is_valid or not zone_poly.is_valid:
+        return 0.0
+    return zone_poly.intersection(box_poly).area
+
+
 def bbox_foot_point(bbox: BBox) -> Point:
     """Bottom-center of a bounding box — the usual proxy for a person's floor position."""
     cx, _ = bbox.center

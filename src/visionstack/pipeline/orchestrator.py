@@ -1,7 +1,9 @@
 """Composes VideoSource -> FrameSampler -> PersonDetector -> LocalTracker -> identity/attendance/
-zone phases into a single runnable pipeline. Phases 3-7 are stubs today (see each module's NoOp
-implementation) but are wired in now so the module-boundary design proves out end-to-end even
-though only ingestion (Phase 1) and detection (Phase 2) do real work.
+zone phases into a single runnable pipeline. Most of phases 3-7 are still stubs (see each module's
+NoOp implementation) but are wired in now so the module-boundary design proves out end-to-end even
+though only ingestion (Phase 1), detection (Phase 2), and — when `local_tracker` is set to
+`TrackTrackLocalTracker` instead of the default `PassthroughLocalTracker` — tracking (Phase 6) do
+real work.
 """
 from __future__ import annotations
 
@@ -13,7 +15,6 @@ from visionstack.attendance.presence_window import (
     NoOpPresenceConfirmationWindow,
     PresenceConfirmationWindow,
 )
-from visionstack.common.geometry import bbox_foot_point
 from visionstack.common.types import Detection, Frame, Track
 from visionstack.detection.person_detector import PersonDetector
 from visionstack.identity.body_embedder import BodyEmbedder, NoOpBodyEmbedder
@@ -61,6 +62,16 @@ class Pipeline:
 
     def _process_frame(self, frame: Frame) -> FrameResult:
         detections = self.detector.detect(frame)
+
+        # Embed each detection's crop *before* tracking (not after, per-track) so the local
+        # tracker's appearance-based association (see TrackTrackLocalTracker) has a real feature
+        # to match on for every detection it considers, not just the ones that already survived
+        # into a track. Batched (one call for the whole frame) rather than per-detection -- matters
+        # for a real embedder like OSNetBodyEmbedder, which is one model forward pass per call.
+        embeddings = self.body_embedder.embed_batch(frame.image, [d.bbox for d in detections])
+        for detection, embedding in zip(detections, embeddings):
+            detection.embedding = embedding
+
         tracks = self.local_tracker.update(detections)
 
         for track in tracks:
@@ -71,15 +82,14 @@ class Pipeline:
 
             faces = self.face_detector.detect(person_crop)
             face_embedding = self.face_embedder.embed(person_crop) if faces else None
-            body_embedding = self.body_embedder.embed(person_crop)
+            body_embedding = latest.embedding
 
             self.identity_matcher.match(face_embedding, body_embedding)
 
-            foot_point = bbox_foot_point(latest.bbox)
             self.zone_monitor.check(
                 track_id=track.track_id,
                 camera_id=frame.camera_id,
-                point=foot_point,
+                bbox=latest.bbox,
                 employee_role=None,
                 ts=frame.timestamp,
             )

@@ -13,6 +13,11 @@ from visionstack.common.types import Detection
 from visionstack.detection.person_detector import PersonDetector
 from visionstack.ingestion.video_source import video_source_from_config
 from visionstack.pipeline.orchestrator import FrameResult, Pipeline
+from visionstack.tracking.local_tracker import (
+    LocalTracker,
+    PassthroughLocalTracker,
+    TrackTrackLocalTracker,
+)
 
 app = typer.Typer(add_completion=False)
 
@@ -45,6 +50,11 @@ def main(
     device: str = typer.Option("auto", help="'auto', 'cpu', or 'cuda'"),
     conf_threshold: float = typer.Option(0.5),
     iou_threshold: float = typer.Option(0.45),
+    tracker: str = typer.Option(
+        "passthrough",
+        help="'passthrough' (fresh id per detection) or 'tracktrack' (real Kalman+ReID tracking "
+        "-- fixed cameras only, see tracking/local_tracker.py)",
+    ),
     show: bool = typer.Option(False, help="Write an annotated output video (out.mp4) for visual sanity-checking"),
     display: bool = typer.Option(
         False, help="Show a live annotated preview window while processing (press 'q' to stop)"
@@ -52,11 +62,24 @@ def main(
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
+    if tracker not in ("passthrough", "tracktrack"):
+        raise typer.BadParameter("--tracker must be 'passthrough' or 'tracktrack'")
+
     video_source = video_source_from_config(camera_id=camera_id, source_type=source_type, uri=source)
     detector = PersonDetector(
         weights_path=weights, device=device, conf_threshold=conf_threshold, iou_threshold=iou_threshold
     )
-    pipeline = Pipeline(video_source=video_source, detector=detector, sample_fps=sample_fps)
+    local_tracker: LocalTracker = (
+        TrackTrackLocalTracker(sample_fps=sample_fps)
+        if tracker == "tracktrack"
+        else PassthroughLocalTracker()
+    )
+    pipeline = Pipeline(
+        video_source=video_source,
+        detector=detector,
+        sample_fps=sample_fps,
+        local_tracker=local_tracker,
+    )
 
     writer: cv2.VideoWriter | None = None
     frame_count = 0

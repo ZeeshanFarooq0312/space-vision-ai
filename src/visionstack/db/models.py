@@ -82,6 +82,10 @@ class Zone(Base):
     name: Mapped[str] = mapped_column(String)
     zone_type: Mapped[str] = mapped_column(String)  # allowed | restricted | exit
     polygon: Mapped[list] = mapped_column(JSON)
+    # If true, a recognized employee's foot-point entering this zone fires
+    # AttendanceEngine.on_entry_match() (a login event) -- see zones/monitor.DbZoneMonitor and
+    # api/live_stream.py's per-frame zone check.
+    triggers_login: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     role_access: Mapped[list["ZoneRoleAccess"]] = relationship(back_populates="zone")
@@ -168,6 +172,31 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String, default="open")  # open | acknowledged | resolved
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TrackEmbedding(Base):
+    """Appearance-embedding snapshots used to re-identify a track across a gap longer than
+    TrackTrackLocalTracker's own in-memory occlusion budget (TrackTrackParams.max_time_lost, a
+    few seconds) -- e.g. a person leaving frame and re-entering minutes later gets a brand new
+    local track_id with no memory of the old one; this table lets that new id resolve back to the
+    same `reid_identity_id` instead of being counted as a different person (see
+    tracking/reid_store.py).
+
+    Deliberately NOT wired to the `tracks` / `global_identities` tables above: nothing in this
+    pipeline creates real `tracks` rows yet (see zones/monitor.py's DbZoneMonitor docstring for
+    the same gap), and `global_identities` carries employee-identity semantics (employee_id,
+    is_unknown) this has nothing to do with -- `reid_identity_id` here is just an anonymous
+    grouping key scoped to this table, resolved purely from appearance, no identity claim implied.
+    """
+
+    __tablename__ = "track_embeddings"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    camera_id: Mapped[str] = mapped_column(ForeignKey("cameras.camera_id"), index=True)
+    reid_identity_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    local_track_id: Mapped[str] = mapped_column(String)
+    embedding = mapped_column(body_embedding_column())
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Trajectory(Base):

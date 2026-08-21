@@ -6,7 +6,15 @@ sqlalchemy==2.0.36
 alembic==1.14.0
 psycopg[binary]==3.2.3
 pgvector==0.3.6
-ultralytics==8.3.55
+ultralytics==8.4.115
+# Full-body ReID (OSNet) for TrackTrackLocalTracker's appearance-based association -- see
+# identity/body_embedder.py's OSNetBodyEmbedder docstring for why pinned to 10.0.83 specifically
+# (latest, 22.0.0, ships a broken package -- confirmed by hand). Forces torch down to 2.2.2 /
+# torchvision to 0.17.2 (boxmot's own pin, overriding ultralytics' unpinned torch>=1.8.0) --
+# verified YOLO inference + CUDA still work fine on that pair before adopting it.
+boxmot==10.0.83
+lap==0.5.13
+scipy==1.14.1
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 shapely==2.0.6

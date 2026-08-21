@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # External face-embedding service (onboard/verify/compare/embeddings) — see
     # visionstack.identity.face_api_client. No local RetinaFace/ArcFace model yet (see README).
     face_api_base_url: str = "http://182.180.87.19:3009"
+    # YOLO weights used by the live-capture and video-upload pipelines (api/live_stream.py,
+    # api/video_upload.py). Defaults to the stock COCO model; point this at a fine-tuned
+    # checkpoint (e.g. runs/detect/person_train/weights/best.pt, copied into ./models so it's
+    # visible inside the container) to use it instead.
+    detection_weights_path: str = "models/yolov8n.pt"
 
 
 class VideoSourceConfig(BaseModel):
@@ -64,6 +69,17 @@ class DetectionConfig(BaseModel):
     iou_threshold: float = 0.45
 
 
+class TrackingConfig(BaseModel):
+    # "passthrough" (fresh id per detection, no association) or "tracktrack" (vendored
+    # Kalman+ReID tracker, see tracking/tracktrack/ and tracking/local_tracker.py's module
+    # docstring for why it's not the default on a non-fixed camera).
+    tracker: Literal["passthrough", "tracktrack"] = "passthrough"
+    det_thr: float = 0.6
+    init_thr: float = 0.6
+    match_thr: float = 0.7
+    max_time_lost_seconds: float = 3.0
+
+
 class IdentityConfig(BaseModel):
     face_match_threshold: float = 0.55
     body_match_threshold: float = 0.45
@@ -76,6 +92,7 @@ class AttendanceConfig(BaseModel):
 
 class PipelineConfig(BaseModel):
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
+    tracking: TrackingConfig = Field(default_factory=TrackingConfig)
     identity: IdentityConfig = Field(default_factory=IdentityConfig)
     attendance: AttendanceConfig = Field(default_factory=AttendanceConfig)
 

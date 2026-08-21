@@ -1,8 +1,8 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 
 from visionstack.api.live_stream import get_processed_video_path, list_processed_videos
 from visionstack.api.schemas import ProcessedVideo, UploadJobStatus, VideoUploadResponse
@@ -52,3 +52,34 @@ def get_upload_status(video_id: str) -> dict:
     if status is None:
         raise HTTPException(status_code=404, detail=f"no upload job '{video_id}'")
     return status
+
+
+@router.get("/upload/{video_id}/preview-frame")
+def get_upload_preview_frame(video_id: str) -> Response:
+    """First frame of the uploaded video, for the zone-drawing UI (frontend's ZoneDrawer, reused
+    against a static image here instead of a live MJPEG stream) -- see video_upload.py's
+    UPLOAD_CAMERA_ID docstring for why a zone drawn against this applies to every future upload.
+    """
+    frame = video_upload_processor.preview_frame(video_id)
+    if frame is None:
+        raise HTTPException(status_code=404, detail=f"no preview frame for '{video_id}'")
+    return Response(content=frame, media_type="image/jpeg")
+
+
+@router.get("/upload/{video_id}/stream")
+def stream_upload_progress(video_id: str) -> StreamingResponse:
+    """Annotated-frame MJPEG stream of an in-progress upload job -- same idea as
+    /live/{camera_id}/stream, so the frontend can show "results in preview" while a video is
+    being processed, not just once it's finished. Stops once the job leaves 'processing'."""
+    return StreamingResponse(
+        video_upload_processor.mjpeg_frames(video_id),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@router.get("/{video_id}/zone-crop/{filename}")
+def get_zone_crop(video_id: str, filename: str) -> FileResponse:
+    path = video_upload_processor.zone_crop_path(video_id, filename)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"no zone crop '{filename}' for '{video_id}'")
+    return FileResponse(path, media_type="image/jpeg")

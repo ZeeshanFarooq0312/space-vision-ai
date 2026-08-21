@@ -17,7 +17,7 @@ into separate services later without a rewrite. See `src/visionstack/`:
 | 3. Identity | `identity/` | **Real (via external service)** — face onboarding/verification calls out to a FaceVerify API (RetinaFace + ArcFace/Facenet512/GhostFaceNet ensemble); no local model yet, see below |
 | 4. Attendance | `attendance/` | Stub — login/logout events, false-logout prevention (TODO) |
 | 5. Zones | `zones/` | Config loading real; violation detection stub (TODO) |
-| 6. Tracking | `tracking/` | Stub local tracking + cross-camera ReID (TODO: ByteTrack, Hungarian fusion) |
+| 6. Tracking | `tracking/` | Local tracking: **real** (`TrackTrackLocalTracker`, opt-in via `tracking.tracker: tracktrack` — vendored Kalman+ReID tracker, fixed cameras only) or stub (`PassthroughLocalTracker`, default). Cross-camera ReID still stub (TODO: Hungarian fusion). Not used by the live-camera/video-upload API, which uses Ultralytics BoT-SORT instead — see `tracking/local_tracker.py` |
 | 7. Reporting | `reporting/` | Stub — attendance reports, dwell time, trajectory replay (TODO) |
 
 Stub phases are callable no-ops (not `NotImplementedError`), so the full pipeline runs end-to-end

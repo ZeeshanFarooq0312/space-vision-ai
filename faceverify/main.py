@@ -158,9 +158,18 @@ MIN_VOTES = 2           # models that must agree → verified
 #         GhostFaceNet is not consulted — ArcFace + Facenet512 are sufficient.
 # Tier 2: Exactly ONE primary agrees + GhostFaceNet also agrees → verified
 #         via tiebreaker.
-# Reject: Only GhostFaceNet agrees (no primary) → never verified alone.
+# Tier 3: A SINGLE primary matched at a near-identical distance (< SOLO_STRONG_DIST) → verified
+#         alone. Marginal/far CCTV faces routinely clear only the most robust model (ArcFace,
+#         observed at ~0.03) while the weaker two drift just over their match thresholds, so a
+#         genuine person kept failing Tier 1/2. A cosine distance this small is confidently the
+#         same person (different people sit well above 0.5 on these models), so it's trusted
+#         rather than rejected. Deliberately primary-models-only and much tighter than either
+#         primary's normal match threshold (ArcFace 0.55 / Facenet512 0.40) or strong_thr
+#         (0.35 / 0.25) -- GhostFaceNet is still never trusted solo.
+# Reject: Only GhostFaceNet agrees (no primary), or no model near-certain → never verified.
 PRIMARY_MODELS   = {"ArcFace", "Facenet512"}
 TIEBREAKER_MODEL = "GhostFaceNet"
+SOLO_STRONG_DIST = 0.15
 
 # Confidence zones (applied after vote passes)
 #   GREEN  ≥ 55  → auto-approve
@@ -1501,6 +1510,21 @@ async def mobile_verify(
                             f"[Verify] Tier-2 pass ({mn} + {TIEBREAKER_MODEL}) → {winner}"
                         )
                         break
+
+        # Tier 3: a single primary matched at a near-identical distance (see SOLO_STRONG_DIST).
+        if winner is None:
+            solo_mn, solo_name, solo_dist = None, None, None
+            for mn, pname in primary_hits.items():
+                d = model_results[mn].get("distance")
+                if d is not None and d < SOLO_STRONG_DIST and (solo_dist is None or d < solo_dist):
+                    solo_mn, solo_name, solo_dist = mn, pname, d
+            if solo_mn:
+                winner        = solo_name
+                winner_models = [solo_mn]
+                logger.info(
+                    f"[Verify] Tier-3 pass (solo strong {solo_mn} "
+                    f"dist={solo_dist:.4f} < {SOLO_STRONG_DIST}) → {winner}"
+                )
 
         confirmed: dict = {}
         if winner:

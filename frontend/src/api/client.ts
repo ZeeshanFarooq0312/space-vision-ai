@@ -13,6 +13,7 @@ import type {
   VideoUploadResponse,
   WebcamDevice,
   Zone,
+  ZoneCreate,
 } from "../types";
 
 const client = axios.create({ baseURL: "/api" });
@@ -38,6 +39,8 @@ export const api = {
     `/api/employees/${employeeId}/photos/${pose}`,
   listCameras: () => client.get<Camera[]>("/cameras").then((r) => r.data),
   listZones: () => client.get<Zone[]>("/zones").then((r) => r.data),
+  createZone: (payload: ZoneCreate) => client.post<Zone>("/zones", payload).then((r) => r.data),
+  deleteZone: (zoneId: string) => client.delete(`/zones/${zoneId}`).then(() => undefined),
   listAttendanceEvents: () =>
     client.get<AttendanceEvent[]>("/attendance").then((r) => r.data),
   listAlerts: (status?: string) =>
@@ -69,6 +72,8 @@ export const api = {
   },
   getUploadStatus: (videoId: string) =>
     client.get<UploadJobStatus>(`/videos/upload/${videoId}/status`).then((r) => r.data),
+  uploadPreviewFrameUrl: (videoId: string) => `/api/videos/upload/${videoId}/preview-frame`,
+  uploadStreamUrl: (videoId: string) => `/api/videos/upload/${videoId}/stream`,
 };
 
 export default client;

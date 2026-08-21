@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
+import { ZoneDrawer } from "../components/ZoneDrawer";
 
 export function Live() {
   const [deviceIndex, setDeviceIndex] = useState<number | null>(null);
@@ -17,6 +18,8 @@ export function Live() {
     refetchInterval: 1000,
   });
   const running = status.data?.running ?? false;
+
+  const zones = useQuery({ queryKey: ["zones"], queryFn: api.listZones, enabled: running });
 
   const start = useMutation({
     mutationFn: () => api.startLive(cameraId!, deviceIndex!),
@@ -107,18 +110,20 @@ export function Live() {
         </p>
       )}
 
-      <div className="flex aspect-video max-w-3xl items-center justify-center rounded-lg border border-gray-200 bg-black">
-        {running && cameraId ? (
-          <img
-            key={streamNonce}
-            src={`${api.liveStreamUrl(cameraId)}?t=${streamNonce}`}
-            alt="Live processed camera feed"
-            className="max-h-full max-w-full"
-          />
-        ) : (
+      {running && cameraId ? (
+        <ZoneDrawer
+          key={streamNonce}
+          cameraId={cameraId}
+          streamSrc={`${api.liveStreamUrl(cameraId)}?t=${streamNonce}`}
+          frameWidth={status.data?.frame_width ?? null}
+          frameHeight={status.data?.frame_height ?? null}
+          existingZones={zones.data ?? []}
+        />
+      ) : (
+        <div className="flex aspect-video max-w-3xl items-center justify-center rounded-lg border border-gray-200 bg-black">
           <span className="text-sm text-gray-400">No active stream</span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

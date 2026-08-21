@@ -50,6 +50,11 @@ class Detection:
     bbox: BBox
     confidence: float
     class_name: str = "person"
+    track_id: str | None = None  # set by PersonDetector.track(); None from plain .detect()
+    # Appearance embedding for this specific detection (not the track), set by the orchestrator
+    # before local tracking so TrackTrackLocalTracker can use it for ReID-based association. None
+    # until then, or when no body embedder is wired in.
+    embedding: np.ndarray | None = None
 
 
 @dataclass

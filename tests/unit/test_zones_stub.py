@@ -54,4 +54,4 @@ def test_allowed_zone_authorises_everyone():
 def test_noop_zone_monitor_never_emits_events():
     monitor = NoOpZoneMonitor()
     result = monitor.check("track-1", "cam-1", (5, 5), "it_admin", datetime.now(timezone.utc))
-    assert result is None
+    assert result == []

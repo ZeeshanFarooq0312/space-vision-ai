@@ -26,6 +26,12 @@ services:
       # 182.180.87.19:3009 server, so onboarding/verify calls stay on the docker
       # network and are easy to inspect/debug (logs, breakpoints, Qdrant browser).
       FACE_API_BASE_URL: http://faceverify:8024
+      # Fine-tuned on our own office/CCTV footage (see person_train.py + README) -- measurably
+      # beats stock yolov8n.pt on our own test split (mAP50 0.965 vs 0.792). Briefly swapped for
+      # stock yolo12m.pt to test it; reverted back per explicit request. Currently a mid-training
+      # checkpoint (person_train.py was still running at copy time); re-copy
+      # runs/detect/person_train/weights/best.pt into ./models once that run finishes/early-stops.
+      DETECTION_WEIGHTS_PATH: models/person_yolo12m_custom.pt
     ports:
       - "8000:8000"
     volumes:
