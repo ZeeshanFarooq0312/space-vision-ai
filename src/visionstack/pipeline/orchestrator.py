@@ -6,7 +6,8 @@ though only ingestion (Phase 1), detection (Phase 2), and — when `local_tracke
 real work.
 """
 from __future__ import annotations
-
+# ADD this import at the top with the other body_embedder imports:
+from visionstack.identity.body_embedder import BodyEmbedder, NoOpBodyEmbedder, OSNetBodyEmbedder
 import logging
 from dataclasses import dataclass, field
 
@@ -45,7 +46,8 @@ class Pipeline:
     local_tracker: LocalTracker = field(default_factory=PassthroughLocalTracker)
     face_detector: FaceDetector = field(default_factory=NoOpFaceDetector)
     face_embedder: FaceEmbedder = field(default_factory=NoOpFaceEmbedder)
-    body_embedder: BodyEmbedder = field(default_factory=NoOpBodyEmbedder)
+    body_embedder: BodyEmbedder = field(default_factory=OSNetBodyEmbedder)
+    # body_embedder: BodyEmbedder = field(default_factory=NoOpBodyEmbedder)
     identity_matcher: IdentityMatcher = field(default_factory=NoOpIdentityMatcher)
     zone_monitor: ZoneMonitor = field(default_factory=NoOpZoneMonitor)
     attendance_engine: AttendanceEngine = field(default_factory=NoOpAttendanceEngine)
