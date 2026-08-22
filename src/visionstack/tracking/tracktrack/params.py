@@ -71,7 +71,7 @@ class TrackTrackParams:
     # single-frame false-positive detections from ever surfacing as a track).
     min_len: int = 3
     # EMA smoothing factor for the appearance-embedding running average kept per track.
-    feature_alpha: float = 0.95
+    feature_alpha: float = 0.80
     # Frames a track may go unmatched before being dropped, converted from
     # max_time_lost_seconds * sample_fps by the caller (see local_tracker.TrackTrackLocalTracker).
     max_time_lost: int = 30
