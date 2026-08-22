@@ -63,7 +63,7 @@ class OSNetBodyEmbedder:
     cosine distance.
     """
 
-    DEFAULT_WEIGHTS = "models/osnet_x0_25_msmt17.pt"
+    DEFAULT_WEIGHTS = "models/osnet_ibn_x1_0_msmt17.pt"
 
     def __init__(self, weights_path: str = DEFAULT_WEIGHTS, device: str = "auto") -> None:
         from boxmot.appearance.reid_auto_backend import ReidAutoBackend
