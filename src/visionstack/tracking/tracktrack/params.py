@@ -126,8 +126,8 @@ class TrackTrackParams:
     # here, while giving appearance real (non-zero) weight for exactly the crossing/occlusion cases
     # it exists for. Revisit if id-swaps are observed in practice -- that's the failure mode raising
     # this further would target.
-    iou_weight: float = 0.7
-    appearance_weight: float = 0.3
+    iou_weight: float = 0.60
+    appearance_weight: float = 0.25
     # association.iterative_assignment hard-gates any match at iou_sim<=0.10 to cost=1.0
     # (unmatchable), regardless of how good the appearance/confidence/angle terms are -- see that
     # function's own comment. That's correct for a track that's been Lost only a frame or two (its
