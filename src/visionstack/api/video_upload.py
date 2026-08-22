@@ -364,11 +364,14 @@ class VideoUploadProcessor:
             # person occluded by someone else never catches up to where they actually reappear).
             # Revert by deleting this override block once the comparison is done -- the tuned
             # default (15.0, speed-gated) lives in tracktrack/params.py untouched.
-            _params = TrackTrackParams()
-            _params.position_freeze_speed_threshold = 1_000_000.0
+            # _params = TrackTrackParams()
+            # _params.position_freeze_speed_threshold = 1_000_000.0
+            # local_tracker = TrackTrackLocalTracker(
+            #     sample_fps=sample_fps, max_time_lost_seconds=600.0, params=_params
+            # )
             local_tracker = TrackTrackLocalTracker(
-                sample_fps=sample_fps, max_time_lost_seconds=600.0, params=_params
-            )
+               sample_fps=sample_fps, max_time_lost_seconds=600.0
+              )
             # TODO(reid-model): PgVectorTrackReidStore's cross-gap matching is disabled again --
             # measured directly against real footage that osnet_x0_25_msmt17 (and the larger
             # osnet_x1_0_msmt17, also tested) don't reliably separate different people on this
